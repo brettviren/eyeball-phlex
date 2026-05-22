@@ -1,0 +1,304 @@
+@startuml big_sequence
+skinparam participantPadding 8
+skinparam boxPadding 6
+skinparam sequenceArrowThickness 1.2
+skinparam roundcorner 4
+skinparam defaultFontSize 11
+
+title Phlex Framework — Construction · Wiring · Execution
+
+' ─────────────────────────────────────────────────────────────
+' Participants
+' ─────────────────────────────────────────────────────────────
+box "Application" #e8f5e9
+  participant "App\n(run.cpp)" as App
+end box
+
+box "Plugin Loading" #fff9c4
+  participant "load_driver /\nload_module /\nload_source\n(Boost.DLL)" as PL
+  participant "Driver Plugin\n(PHLEX_REGISTER_DRIVER)" as DP
+  participant "Module Plugin\n(PHLEX_REGISTER_ALGORITHMS)" as MP
+  participant "Source Plugin\n(PHLEX_REGISTER_PROVIDERS)" as SP
+end box
+
+box "Framework Core" #e3f2fd
+  participant "framework_graph" as FG
+  participant "fixed_hierarchy" as FH
+  participant "node_catalog" as NC
+  participant "edge_maker" as EM
+  participant "index_router" as IR
+end box
+
+box "TBB Graph Nodes" #fce4ec
+  participant "src_\n(input_node)" as SRC
+  participant "hierarchy_node_\n(function_node)" as HN
+  participant "provider node\n(declared_provider)" as Prov
+  participant "transform node\n(declared_transform)" as Trans
+  participant "unfold node\n(declared_unfold)" as Unfold
+end box
+
+' ═════════════════════════════════════════════════════════════
+== Phase 1 — Construction ==
+' ═════════════════════════════════════════════════════════════
+
+App -> PL : load_driver(config)
+PL -> PL : Boost.DLL: import create_driver symbol
+PL -> DP : create_driver(driver_proxy, config)
+
+note right of DP
+  Driver plugin declares hierarchy:
+    fixed_hierarchy h{ {"job","run","event"},
+                        {"job","run","apa"} }
+  and a driver function that traverses it
+end note
+
+DP -> FH ** : fixed_hierarchy(layer_paths)
+note right of FH
+  build_hashes():
+  pre-compute cumulative path hashes
+  e.g. hash("job"), hash("job/run"),
+       hash("job/run/event"), …
+  stored in sorted layer_hashes_
+end note
+
+DP -> DP : driver_proxy.driver(hierarchy, driver_fn)
+note right of DP
+  wraps fn so that execution starts with
+  fixed_hierarchy::yield_job(async_driver)
+  cursor.yield_child("run",0)  etc.
+end note
+
+DP --> PL : driver_bundle { driver_fn, fixed_hierarchy }
+PL --> App : driver_bundle
+
+App -> FG ** : framework_graph(driver_bundle, max_parallelism)
+note right of FG
+  stores:  fixed_hierarchy_, driver_
+  creates: src_             (TBB input_node, inactive)
+           index_router_    (empty)
+           hierarchy_node_  (counts seen data cells)
+end note
+FG -> SRC ** : create input_node\n[lambda: driver_() → index_router_.route()]
+FG -> IR ** : create index_router
+FG -> HN ** : create hierarchy_node_\n[lambda: hierarchy_.increment_count(index)]
+
+group Load algorithm modules (one per module in config)
+  App -> PL : load_module(g, "calibrate", config)
+  PL -> PL : Boost.DLL: import create_module symbol
+  PL -> MP : create_module(module_graph_proxy, config)
+  MP -> FG : proxy.transform("calibrate", cal_fn)
+  note right of FG
+    glue<T>::transform() →
+    declared_transform(name, input_queries)
+  end note
+  FG -> Trans ** : declared_transform("calibrate",\n  input=["event:raw_hits"])
+  FG -> NC : nodes_.transforms.register("calibrate", node)
+
+  App -> PL : load_module(g, "apa_splitter", config)
+  PL -> MP : create_module(module_graph_proxy, config)
+  MP -> FG : proxy.unfold("unfold_apa", pred, split_fn, "apa")
+  FG -> Unfold ** : declared_unfold("unfold_apa",\n  input=["event:cal_hits"],\n  child_layer="apa")
+  FG -> NC : nodes_.unfolds.register("unfold_apa", node)
+end
+
+group Load data source modules (one per source in config)
+  App -> PL : load_source(g, "provider_raw", config)
+  PL -> PL : Boost.DLL: import create_source symbol
+  PL -> SP : create_source(source_graph_proxy, config)
+  SP -> FG : proxy.provide("raw_hits", raw_fn)
+  note right of FG
+    glue<T>::provide() →
+    declared_provider(name, output_product_query)
+  end note
+  FG -> Prov ** : declared_provider("provider_raw",\n  output="event:raw_hits")
+  FG -> NC : nodes_.providers.register("provider_raw", node)
+end
+
+' ═════════════════════════════════════════════════════════════
+== Phase 2 — Finalize (g.execute() → finalize()) ==
+' ═════════════════════════════════════════════════════════════
+
+App -> FG : g.execute()
+FG -> FG : check registration_errors_ (throw if non-empty)
+
+FG -> FG : internal_edges_for_predicates()\n[build filter nodes; wire predicate senders\n to predicated consumer filter ports]
+
+FG -> EM ** : edge_maker em { transforms, folds, unfolds }
+note right of EM
+  em holds the "known producer" set:
+  every transform/fold/unfold that exposes
+  an output_port carrying message tokens
+end note
+
+FG -> EM : em(graph, index_router, filters, outputs,\n   providers, predicates, observers,\n   folds, unfolds, transforms)
+
+  note over EM
+    Step A: wire outputs
+    For each declared_output node:
+      make_edge(provider.output_port, output.port)
+      make_edge(producer.output_port, output.port)
+  end note
+
+  loop for each consumer (transform / unfold / observer / fold)
+    EM -> EM : for each product_query in consumer.input():
+    EM -> EM : find_producer(query) among transforms/folds/unfolds
+    alt producer found in known-producer set
+      EM -> EM : make_edge(producer.output_port,\n           consumer.input_port(query))
+    else product must come from a provider
+      EM -> EM : head_ports[consumer] += {query, consumer.input_port}
+    end
+  end
+
+  EM -> EM : make_provider_edges(head_ports, providers)
+  loop for each head_port entry
+    EM -> Prov : match port.input_product → provider.output_product()
+    EM -> EM : make_edge(provider.output_port, consumer.input_port)
+    EM -> EM : collect provider_input_ports\n{layer_query, provider.input_port}
+  end
+
+  EM -> IR : index_router.finalize(\n  provider_input_ports, multilayer_ports)
+  note right of IR
+    For each provider layer:
+      create index_set_node broadcaster
+      make_edge(broadcaster, provider.input_port)
+    For each multilayer consumer:
+      create multilayer_slots (one per queried layer)
+      make_edge(slot.broadcaster, consumer.index_join_port)
+  end note
+
+FG -> FG : connect_with_flusher(folds)\n[make_edge(flusher, fold.flush_port)\n for each fold's queried layer]
+
+FG -> SRC : make_edge(src_, hierarchy_node_)\n[every driver-emitted index counted]
+loop for each unfold node
+  FG -> Unfold : make_edge(unfold.output_index_port(),\n               hierarchy_node_)
+  note right: unfold-created child\nindices also counted
+end
+
+note over FG, IR
+  Graph fully wired.  Key TBB edges now in place:
+    src_                → hierarchy_node_
+    index_router broadcaster  → provider.input_port
+    provider.output_port      → consumer.input_port(s)
+    transform.output_port     → downstream.input_port
+    unfold.output_port<0>     → downstream algo.input_port
+    unfold.output_port<1>     → hierarchy_node_
+    flusher                   → fold.flush_port
+end note
+
+' ═════════════════════════════════════════════════════════════
+== Phase 3 — Execution (run()) ==
+' ═════════════════════════════════════════════════════════════
+
+FG -> SRC : src_.activate()
+note right of SRC : TBB scheduler begins\ncalling src_ lambda
+
+group Driver yields job:0
+  SRC -> SRC : driver_() → data_cell_index::job()\n[fixed_hierarchy::yield_job() called first]
+  SRC -> IR : index_router_.route(job:0)
+  IR -> IR : backout_to(job:0) — stack empty, no-op
+  IR -> IR : send_to_provider_index_nodes(job:0, msg_id=0)\nlookup broadcaster by layer_hash("job")
+  IR -> Prov : broadcaster.try_put({index=job:0, msg_id=0})
+  Prov -> Prov : call user provide fn with data_cell_cursor
+  Prov -> Prov : product_store{job:0, config}
+  Prov ->> Trans : try_put(message{store, id})
+  IR -> IR : push layer_scope(job:0, msg_id=0) on stack
+  SRC --> IR : return job:0 index
+  SRC ->> HN : src_ output → try_put(job:0)
+  HN -> HN : hierarchy_.increment_count("job")
+end
+
+group Driver yields run:0
+  SRC -> SRC : cursor.yield_child("run", 0)\n→ fixed_hierarchy::validate(run:0) ✓\n→ async_driver.yield(run:0)
+  SRC -> IR : index_router_.route(run:0)
+  IR -> IR : backout_to(run:0) — job scope deeper, no pop
+  IR -> IR : send_to_provider_index_nodes(run:0, msg_id=1)
+  IR -> Prov : broadcaster.try_put({index=run:0, msg_id=1})
+  Prov -> Prov : call user provide fn
+  Prov -> Prov : product_store{run:0, gains}
+  Prov ->> Trans : try_put(message{store, id})
+  IR -> IR : push layer_scope(run:0, msg_id=1)
+  SRC ->> HN : try_put(run:0)
+  HN -> HN : hierarchy_.increment_count("run")
+end
+
+group Driver yields event:0
+  SRC -> SRC : cursor.yield_child("event", 0)\n→ validate(event:0) ✓ → yield
+  SRC -> IR : index_router_.route(event:0)
+  IR -> IR : backout_to(event:0) — run/job still shallower, no pop
+  IR -> IR : send_to_provider_index_nodes(event:0, msg_id=2)
+  IR -> Prov : broadcaster.try_put({index=event:0, msg_id=2})
+  Prov -> Prov : call raw_fn → product_store{event:0, raw_hits}
+  Prov ->> Trans : try_put(message{store})
+  IR -> IR : push layer_scope(event:0, msg_id=2)
+  SRC ->> HN : try_put(event:0)
+  HN -> HN : hierarchy_.increment_count("event")
+
+  Trans -> Trans : call calibrate fn\nretrieve raw_hits via handle<T>
+  Trans -> Trans : product_store{event:0, cal_hits}
+  Trans ->> Unfold : try_put(message{cal_hits store})
+end
+
+group Unfold populates apa layer from event:0
+  Unfold -> Unfold : construct Object from cal_hits handle
+  Unfold -> Unfold : create generator(store, "unfold_apa", "apa")
+
+  loop i = 0 .. 3  (while predicate holds)
+    Unfold -> Unfold : new_id = event:0.make_child("apa", i)\n[bypasses fixed_hierarchy::validate]
+    Unfold -> Unfold : unfold_fn(obj, state) → (next_state, apa_products)
+    Unfold -> Unfold : generator.make_child_for(i, products)\n→ product_store{apa:i, wire_sigs}
+    Unfold ->> Trans : output_port<0>.try_put(\n  message{apa:i store})
+    Unfold ->> HN : output_port<1>.try_put(apa:i index)
+    HN -> HN : hierarchy_.increment_count("apa")
+  end
+
+  Unfold -> Unfold : flusher_.try_put(\n  {index=event:0, counts={apa:4}, original_id})
+  note right of Unfold: flusher reaches any folds\nwaiting on apa-level completion
+end
+
+group Apa-level transform processes apa:0
+  Trans -> Trans : call deconvolve fn\nretrieve wire_sigs from apa:0 store
+  Trans -> Trans : product_store{apa:0, tracks}
+  Trans ->> Trans : try_put downstream (observer / further algos)
+end
+
+group Driver yields event:1
+  SRC -> SRC : cursor.yield_child("event", 1) → yield
+  SRC -> IR : index_router_.route(event:1)
+  IR -> IR : backout_to(event:1)\nnew_depth == event:0 depth → pop event:0 scope
+  note right of IR
+    layer_scope(event:0) destructor:
+    • put_end_token(event:0) to multilayer slots
+      → slot.flusher_.try_put({event:0, count})
+    • flusher_.try_put(flush_message{event:0,…})
+      → fold.flush_port receives → fold finalises
+  end note
+  IR -> IR : send_to_provider_index_nodes(event:1, msg_id=N)
+  IR -> Prov : broadcaster.try_put({index=event:1, msg_id=N})
+  Prov -> Prov : product_store{event:1, raw_hits}
+  Prov ->> Trans : try_put(message{store})
+  IR -> IR : push layer_scope(event:1)
+  SRC ->> HN : try_put(event:1)
+end
+
+group Driver exhausted
+  SRC -> SRC : driver_() returns nullopt
+  SRC -> IR : index_router_.drain()
+  IR -> IR : pop all remaining scopes\n(event:1, run:0, job:0)
+  note right of IR
+    Each popped scope destructor sends
+    flush_messages for any folds scoped
+    to run or job
+  end note
+  SRC -> SRC : fc.stop() — TBB halts src_ generation
+end
+
+FG -> FG : graph_.wait_for_all()\n[block until all in-flight TBB work completes]
+
+FG --> App : execute() returns
+note over App, FG
+  Post-execution:
+  • framework_graph::seen_cell_count("event")  → via data_layer_hierarchy
+  • framework_graph::execution_count("calibrate") → via node_catalog
+end note
+
+@enduml

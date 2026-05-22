@@ -1,0 +1,204 @@
+digraph phlex_data_model {
+    rankdir=TB
+    compound=true
+    nodesep=0.6
+    ranksep=0.9
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11]
+    edge [fontname="Helvetica", fontsize=9, color="#444444"]
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Cluster: Data-Layer Hierarchy
+    // ═══════════════════════════════════════════════════════════════════
+    subgraph cluster_hierarchy {
+        label="Data-Layer Hierarchy"
+        style="filled,rounded"
+        fillcolor="#dae8fc"
+        color="#6c8ebf"
+        fontsize=13
+        fontname="Helvetica-Bold"
+
+        dlh [label="data-layer hierarchy",
+             fillcolor="#aed4f5"]
+        dl  [label="data layer",
+             fillcolor="#dae8fc"]
+        dc  [label="data cell",
+             fillcolor="#dae8fc"]
+        dci [label="data cell index\n(layer_name · number\ndepth · hash · layer_path)",
+             fillcolor="#dae8fc"]
+
+        dlh -> dl  [label="1+ layers"]
+        dl  -> dc  [label="1+ cells"]
+        dc  -> dci [label="identified by"]
+        dci -> dci [label="parent → child", style=dashed, color="#6c8ebf",
+                    headport=ne, tailport=se]
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Cluster: Data Products
+    // ═══════════════════════════════════════════════════════════════════
+    subgraph cluster_products {
+        label="Data Products"
+        style="filled,rounded"
+        fillcolor="#d5e8d4"
+        color="#5a9e5a"
+        fontsize=13
+        fontname="Helvetica-Bold"
+
+        ps    [label="product store",
+               fillcolor="#b8ddb6"]
+        prod  [label="product\n(type-erased)",
+               fillcolor="#d5e8d4"]
+        pspec [label="product specification\n(creator · suffix · type_id)",
+               fillcolor="#d5e8d4"]
+
+        ps   -> prod  [label="stores 0+"]
+        prod -> pspec [label="keyed by"]
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Cluster: Message Passing
+    // ═══════════════════════════════════════════════════════════════════
+    subgraph cluster_messages {
+        label="Message Passing"
+        style="filled,rounded"
+        fillcolor="#fff2cc"
+        color="#d6b656"
+        fontsize=13
+        fontname="Helvetica-Bold"
+
+        msg [label="message",
+             fillcolor="#ffe599"]
+        mid [label="message id",
+             fillcolor="#fff2cc"]
+        mm  [label="message matcher\n(extracts id for TBB tag-matching)",
+             fillcolor="#fff2cc"]
+
+        msg -> mid [label="contains"]
+        mm  -> mid [label="extracts"]
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Cluster: Framework Graph
+    // ═══════════════════════════════════════════════════════════════════
+    subgraph cluster_fgraph {
+        label="Framework Graph"
+        style="filled,rounded"
+        fillcolor="#f8cecc"
+        color="#b85450"
+        fontsize=13
+        fontname="Helvetica-Bold"
+
+        fg  [label="framework graph",
+             fillcolor="#f4b8b5"]
+        nc  [label="node catalog",
+             fillcolor="#f8cecc"]
+        flt [label="filters\n(predicate-gated routing)",
+             fillcolor="#f8cecc"]
+        ir  [label="index router",
+             fillcolor="#f8cecc"]
+
+        // ── Node Types ────────────────────────────────────────────────
+        subgraph cluster_nodes {
+            label="Node Types"
+            style="filled,rounded"
+            fillcolor="#e8d5f5"
+            color="#9673a6"
+            fontsize=12
+            fontname="Helvetica-Bold"
+
+            in_node [label="input node\n(single TBB source\ndata_cell_index_ptr)",
+                     fillcolor="#d4b5e8"]
+            pn      [label="provider node\n(reads external data)",
+                     fillcolor="#e8d5f5"]
+            gn      [label="graph node\n(transform / fold\nunfold / observe)",
+                     fillcolor="#e8d5f5"]
+
+            // ── Cross-Layer Join ──────────────────────────────────────
+            subgraph cluster_join {
+                label="Cross-Layer Join"
+                style="filled,rounded"
+                fillcolor="#f5eafa"
+                color="#9673a6"
+                fontsize=11
+                fontname="Helvetica-Bold"
+
+                clj [label="cross-layer join",
+                     fillcolor="#ead5f5"]
+                mjn [label="multilayer join node\n(TBB join_node + tag_matching)",
+                     fillcolor="#f5eafa"]
+                rn  [label="repeater node\n(caches coarse-layer product;\nreplays per fine-layer cell)",
+                     fillcolor="#f5eafa"]
+
+                clj -> mjn [label="realized by"]
+                mjn -> rn  [label="inserts on\ncross-layer input"]
+            }
+        }
+
+        // ── Graph Wiring (startup) ────────────────────────────────────
+        subgraph cluster_wiring {
+            label="Graph Wiring  (startup)"
+            style="filled,rounded"
+            fillcolor="#fce5cd"
+            color="#d79b00"
+            fontsize=12
+            fontname="Helvetica-Bold"
+
+            em  [label="edge maker",
+                 fillcolor="#f9d0a0"]
+            ge  [label="graph edge\n(TBB flow edge)",
+                 fillcolor="#fce5cd"]
+            req [label="requires\n(product_query)",
+                 fillcolor="#fce5cd", shape=ellipse]
+            cre [label="creates\n(output suffix list)",
+                 fillcolor="#fce5cd", shape=ellipse]
+
+            gn  -> req [label="declares"]
+            gn  -> cre [label="declares"]
+            em  -> req [label="matches\nproducers to"]
+            em  -> cre [label="reads"]
+            em  -> ge  [label="creates"]
+        }
+
+        fg      -> nc      [label="contains"]
+        fg      -> flt     [label="contains"]
+        fg      -> ir      [label="contains"]
+        fg      -> in_node [label="contains\n(exactly 1)"]
+        nc      -> pn      [label="registers"]
+        nc      -> gn      [label="registers"]
+        in_node -> ir      [label="feeds\ncell indices"]
+        ir      -> pn      [label="routes\nindex tokens"]
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Cross-cluster relationships
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Data cell owns its product store
+    dc  -> ps   [label="has one",
+                 style=bold, color="#5a9e5a",
+                 ltail=cluster_hierarchy, lhead=cluster_products]
+
+    // Product store is the payload of a message
+    ps  -> msg  [label="carried by",
+                 style=bold, color="#d6b656",
+                 ltail=cluster_products, lhead=cluster_messages]
+
+    // Message flows on a graph edge
+    msg -> ge   [label="flows on",
+                 style=bold, color="#b85450",
+                 ltail=cluster_messages]
+
+    // Message matcher is used by multilayer join to pair messages
+    mm  -> mjn  [label="used by", style=dashed, color="#9673a6"]
+
+    // Nodes create / read product stores at runtime
+    pn  -> ps   [label="creates",        style=dashed, color="#9673a6"]
+    gn  -> ps   [label="reads / writes", style=dashed, color="#9673a6"]
+    rn  -> ps   [label="caches",         style=dashed, color="#9673a6"]
+
+    // Filters sit on graph edges
+    flt -> ge   [label="gates", style=dashed, color="#b85450"]
+
+    // Graph edges carry messages to cross-layer join
+    ge  -> clj  [label="inputs to\n(when cross-layer)", style=dashed, color="#9673a6"]
+}

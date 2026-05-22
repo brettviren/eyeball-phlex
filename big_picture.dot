@@ -1,0 +1,790 @@
+// big_picture.dot — Phlex type relationships
+// Based on Slide Q10 ASCII diagram plus additional entities from Q9 and source analysis.
+//
+// Compile:  dot -Tsvg big_picture.dot -o big_picture.svg
+//           dot -Tpdf big_picture.dot -o big_picture.pdf
+//
+// Shape / colour conventions
+//   box              — data-model / named struct
+//   box + rounded    — declared algorithm node (TBB flow-graph node)
+//   box + dashed     — abstract base class or interface
+//   cylinder         — hierarchy container (schema or runtime observer)
+//   note             — TBB message type (flow-graph currency)
+//   ellipse          — execution infrastructure (router, catalog, graph)
+//   component        — user-facing proxy / plugin glue
+//   cds              — macro / Boost.DLL plugin entry point
+//
+// Fill colours by layer / role
+//   #dae8fc  light blue   — naming & identity types
+//   #e8eaf6  light indigo — data storage types (product_*, handle)
+//   #c8e6c9  light green  — hierarchy model types (data_cell_*, fixed_hierarchy)
+//   #b2dfdb  light teal   — declared_provider (distinct: no products_consumer base)
+//   #dcedc8  pale green   — declared algorithm nodes & products_consumer base
+//   #fff9c4  light yellow — TBB message types
+//   #ffcc80  light orange — execution infrastructure
+//   #e1bee7  light purple — user-facing proxies / configuration
+//   #ce93d8  medium purple— driver types & glue
+//   #f8bbd0  light pink   — Boost.DLL macro entry points
+//
+// Edge styles
+//   solid  black  normal arrowhead  — ownership  (A owns / contains B)
+//   solid  gray   open arrowhead    — reference  (A holds borrowed ref to B)
+//   solid  purple empty arrowhead   — inheritance (A inherits from B)
+//   bold   blue   vee arrowhead     — data flow  (message / index flows A → B)
+//   dashed green  normal arrowhead  — creates    (A constructs B)
+//   dotted red    vee arrowhead     — validates  (A validates B)
+//   dashed orange open arrowhead    — wires/matches (edge_maker resolves)
+
+digraph phlex_types {
+
+    graph [
+        rankdir   = TB,
+        compound  = true,
+        fontname  = "Helvetica",
+        fontsize  = 13,
+        pad       = 0.6,
+        nodesep   = 0.45,
+        ranksep   = 0.8,
+        splines   = spline,
+        label     = "Phlex — Big-Picture Type Relationships",
+        labelloc  = t,
+        labeljust = c,
+    ]
+    node [
+        fontname = "Helvetica",
+        fontsize = 9,
+        style    = filled,
+        margin   = "0.14,0.08",
+    ]
+    edge [
+        fontname = "Helvetica",
+        fontsize = 8,
+    ]
+
+    // =====================================================================
+    // NAMING LAYER
+    // =====================================================================
+    subgraph cluster_naming_layer {
+        label     = "NAMING LAYER"
+        style     = filled
+        bgcolor   = "#eef4ff"
+        pencolor  = "#1565c0"
+        penwidth  = 2.5
+        fontsize  = 13
+        fontcolor = "#1565c0"
+        fontname  = "Helvetica-Bold"
+
+        identifier [
+            label     = "identifier\nstd::string + uint64_t hash",
+            shape     = box,
+            fillcolor = "#dae8fc",
+        ]
+        algorithm_name [
+            label     = "algorithm_name\nplugin_: identifier\nalgorithm_: identifier",
+            shape     = box,
+            fillcolor = "#dae8fc",
+        ]
+        product_specification [
+            label     = "product_specification\nqualifier_: algorithm_name\nsuffix_: identifier\ntype_: type_id",
+            shape     = box,
+            fillcolor = "#dae8fc",
+        ]
+        product_query [
+            label     = "product_query\ncreator: identifier\nlayer: identifier\nsuffix: identifier\ntype_id, stage (opt.)",
+            shape     = box,
+            fillcolor = "#dae8fc",
+        ]
+
+        subgraph cluster_storage {
+            label     = "Data Storage"
+            style     = filled
+            bgcolor   = "#f0efff"
+            pencolor  = "#5c6bc0"
+            penwidth  = 1.5
+            fontsize  = 10
+            fontcolor = "#5c6bc0"
+
+            product_base [
+                label     = "product_base\n(abstract)\naddress() → void const*\ntype_info() → type_info const&",
+                shape     = box,
+                fillcolor = "#e8eaf6",
+                style     = "filled,dashed",
+            ]
+            product_T [
+                label     = "product<T>\nobj: T",
+                shape     = box,
+                fillcolor = "#e8eaf6",
+            ]
+            product_store [
+                label     = "product_store\nproducts: map<spec, unique_ptr<product_base>>\nid_: data_cell_index_ptr\nsource_: algorithm_name",
+                shape     = box,
+                fillcolor = "#e8eaf6",
+            ]
+            handle_T [
+                label     = "handle<T>\nproduct_: T const*\nid_: data_cell_index const*\ncreator_plugin_, creator_algorithm_\nsuffix_: identifier",
+                shape     = box,
+                fillcolor = "#e8eaf6",
+                style     = "filled,dotted",
+            ]
+        }
+    }
+
+    // =====================================================================
+    // HIERARCHY LAYER
+    // =====================================================================
+    subgraph cluster_hierarchy_layer {
+        label     = "HIERARCHY LAYER"
+        style     = filled
+        bgcolor   = "#f0fff4"
+        pencolor  = "#2e7d32"
+        penwidth  = 2.5
+        fontsize  = 13
+        fontcolor = "#2e7d32"
+        fontname  = "Helvetica-Bold"
+
+        fixed_hierarchy [
+            label     = "fixed_hierarchy\nlayer_hashes_: vector<size_t>\n(sorted — driver schema only)\nvalidate() · yield_job()",
+            shape     = cylinder,
+            fillcolor = "#a5d6a7",
+        ]
+        data_layer_hierarchy [
+            label     = "data_layer_hierarchy\n(runtime layer observer)\ncounts cells seen per layer\nno schema validation",
+            shape     = cylinder,
+            fillcolor = "#a5d6a7",
+        ]
+        data_cell_index [
+            label     = "data_cell_index\nlayer_name_: identifier\nnumber_: size_t\nparent_: data_cell_index_ptr\nlayer_hash_, hash_, depth_\n\nsingleton root: job()\ncreate children: make_child()",
+            shape     = box,
+            fillcolor = "#c8e6c9",
+        ]
+        data_cell_cursor [
+            label     = "data_cell_cursor\nindex_: data_cell_index_ptr\nhierarchy_: fixed_hierarchy& (borrowed)\ndriver_: async_driver& (borrowed)\n\nyield_child() — validates + yields",
+            shape     = box,
+            fillcolor = "#c8e6c9",
+        ]
+        async_driver [
+            label     = "async_driver<data_cell_index_ptr>\nyield() — pushes index\nto TBB input_node",
+            shape     = box,
+            fillcolor = "#c8e6c9",
+        ]
+        layer_generator [
+            label     = "layer_generator  (plugins/)\nadd_layer(name, layer_spec)\nhierarchy() → fixed_hierarchy\ndriver_for_test() → driver_bundle",
+            shape     = component,
+            fillcolor = "#b9f6ca",
+        ]
+    }
+
+    // =====================================================================
+    // EXECUTION LAYER
+    // =====================================================================
+    subgraph cluster_execution_layer {
+        label     = "EXECUTION LAYER"
+        style     = filled
+        bgcolor   = "#fffaf0"
+        pencolor  = "#e65100"
+        penwidth  = 2.5
+        fontsize  = 13
+        fontcolor = "#e65100"
+        fontname  = "Helvetica-Bold"
+
+        // -----------------------------------------------------------------
+        // TBB Message types
+        // -----------------------------------------------------------------
+        subgraph cluster_messages {
+            label     = "TBB Message Types"
+            style     = filled
+            bgcolor   = "#fffde7"
+            pencolor  = "#f9a825"
+            penwidth  = 1.5
+            fontsize  = 10
+            fontcolor = "#f9a825"
+
+            index_message [
+                label     = "index_message\nindex: data_cell_index_ptr\nmsg_id: size_t\ncache: bool",
+                shape     = note,
+                fillcolor = "#fff9c4",
+            ]
+            message [
+                label     = "message\nstore: product_store_const_ptr\nid: size_t",
+                shape     = note,
+                fillcolor = "#fff9c4",
+            ]
+            flush_message [
+                label     = "flush_message\nindex: data_cell_index_ptr\ncounts: flush_counts_ptr\noriginal_id: size_t",
+                shape     = note,
+                fillcolor = "#fff9c4",
+            ]
+        }
+
+        // -----------------------------------------------------------------
+        // Declared algorithm nodes
+        // -----------------------------------------------------------------
+        subgraph cluster_algo_nodes {
+            label     = "Declared Algorithm Nodes"
+            style     = filled
+            bgcolor   = "#f0fff8"
+            pencolor  = "#1b5e20"
+            penwidth  = 1.5
+            fontsize  = 10
+            fontcolor = "#1b5e20"
+
+            products_consumer [
+                label     = "products_consumer\n(base class)\ninput_products_: product_queries\nlayers_: vector<identifier>",
+                shape     = box,
+                fillcolor = "#dcedc8",
+                style     = "filled,dashed",
+            ]
+            declared_provider [
+                label     = "declared_provider\n(NOT products_consumer)\nname_: algorithm_name\noutput_product_: product_query\n← index_message  → message",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#b2dfdb",
+            ]
+            declared_transform [
+                label     = "declared_transform\n← message  → message",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#dcedc8",
+            ]
+            declared_fold [
+                label     = "declared_fold\npartition_: identifier\naccumulator map: hash → state\n← message + flush_message\n→ message  (on flush)",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#dcedc8",
+            ]
+            declared_unfold [
+                label     = "declared_unfold\nchild_layer_: string\n← message\n→ message  (port 0 — child stores)\n→ data_cell_index_ptr  (port 1 — child indices)",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#dcedc8",
+            ]
+            declared_observer [
+                label     = "declared_observer\n← message  (no output port)",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#dcedc8",
+            ]
+            declared_predicate [
+                label     = "declared_predicate\n← message  → bool filter",
+                shape     = box,
+                style     = "filled,rounded",
+                fillcolor = "#dcedc8",
+            ]
+        }
+
+        // -----------------------------------------------------------------
+        // Execution infrastructure
+        // -----------------------------------------------------------------
+        subgraph cluster_infra {
+            label     = "Execution Infrastructure"
+            style     = filled
+            bgcolor   = "#fff3e0"
+            pencolor  = "#bf360c"
+            penwidth  = 1.5
+            fontsize  = 10
+            fontcolor = "#bf360c"
+
+            framework_graph [
+                label     = "framework_graph\nfixed_hierarchy_ (schema)\nhierarchy_ (data_layer_hierarchy)\nnodes_: node_catalog\nindex_router_\nsrc_: input_node<data_cell_index_ptr>\ngraph_: tbb::flow::graph",
+                shape     = ellipse,
+                fillcolor = "#ffcc80",
+            ]
+            node_catalog [
+                label     = "node_catalog\nproviders / transforms / folds\nunfolds / observers / predicates",
+                shape     = ellipse,
+                fillcolor = "#ffcc80",
+            ]
+            index_router [
+                label     = "index_router\nmap: layer_hash → provider ports\nroutes data_cell_index_ptr\nby layer_hash()",
+                shape     = ellipse,
+                fillcolor = "#ffcc80",
+            ]
+            edge_maker [
+                label     = "edge_maker\nmatches product_query\nto output specs at finalize()\ncalls tbb::make_edge()",
+                shape     = ellipse,
+                fillcolor = "#ffcc80",
+            ]
+            flusher_t [
+                label     = "flusher_t\n(broadcast node)\nsignals partition complete\nper data_cell_index",
+                shape     = ellipse,
+                fillcolor = "#ffcc80",
+            ]
+            hierarchy_node_ [
+                label     = "hierarchy_node_\ntbb::function_node\npasses ALL seen indices\nto data_layer_hierarchy",
+                shape     = ellipse,
+                fillcolor = "#ffe0b2",
+            ]
+        }
+
+        // -----------------------------------------------------------------
+        // Registration / user-facing
+        // -----------------------------------------------------------------
+        subgraph cluster_registration {
+            label     = "Registration & User-Facing API"
+            style     = filled
+            bgcolor   = "#f3e5f5"
+            pencolor  = "#6a1b9a"
+            penwidth  = 1.5
+            fontsize  = 10
+            fontcolor = "#6a1b9a"
+
+            configuration [
+                label     = "configuration\n(Boost.JSON)",
+                shape     = box,
+                fillcolor = "#e1bee7",
+            ]
+            driver_proxy [
+                label     = "driver_proxy\ndriver(hierarchy, callable)\n→ driver_bundle",
+                shape     = component,
+                fillcolor = "#ce93d8",
+            ]
+            driver_bundle [
+                label     = "driver_bundle\nhierarchy: fixed_hierarchy\ndriver: callable",
+                shape     = box,
+                fillcolor = "#ce93d8",
+            ]
+            graph_proxy_T [
+                label     = "graph_proxy<T>\nfold() observe() predicate()\ntransform() unfold()\nprovide()  make<U>()",
+                shape     = component,
+                fillcolor = "#e1bee7",
+            ]
+            module_graph_proxy [
+                label     = "module_graph_proxy\nfold obs pred\ntransform unfold make\n(no provide)",
+                shape     = component,
+                fillcolor = "#e1bee7",
+            ]
+            source_graph_proxy [
+                label     = "source_graph_proxy\nprovide() make() only",
+                shape     = component,
+                fillcolor = "#e1bee7",
+            ]
+            glue_T [
+                label     = "glue<T>\ncreates declared_* nodes\nbinds bound_obj (shared_ptr<T>)\nregisters in node_catalog",
+                shape     = component,
+                fillcolor = "#ce93d8",
+            ]
+            macro_register_alg [
+                label     = "PHLEX_REGISTER_ALGORITHMS\nBoost.DLL alias: create_module\nentry: module_graph_proxy + config",
+                shape     = cds,
+                fillcolor = "#f8bbd0",
+            ]
+            macro_register_src [
+                label     = "PHLEX_REGISTER_PROVIDERS\nBoost.DLL alias: create_source\nentry: source_graph_proxy + config",
+                shape     = cds,
+                fillcolor = "#f8bbd0",
+            ]
+            macro_register_drv [
+                label     = "PHLEX_REGISTER_DRIVER\nBoost.DLL alias: create_driver\nentry: driver_proxy + config",
+                shape     = cds,
+                fillcolor = "#f8bbd0",
+            ]
+        }
+    }
+
+    // =====================================================================
+    // LEGEND (separate subgraph, no cluster)
+    // =====================================================================
+    subgraph cluster_legend {
+        label     = "Edge Legend"
+        style     = filled
+        bgcolor   = "#fafafa"
+        pencolor  = "#aaaaaa"
+        penwidth  = 1.0
+        fontsize  = 10
+        fontcolor = "#555555"
+        rank      = sink
+
+        leg_own_a  [label="A", shape=plaintext, style=""]
+        leg_own_b  [label="B", shape=plaintext, style=""]
+        leg_ref_a  [label="A", shape=plaintext, style=""]
+        leg_ref_b  [label="B", shape=plaintext, style=""]
+        leg_inh_a  [label="A", shape=plaintext, style=""]
+        leg_inh_b  [label="B", shape=plaintext, style=""]
+        leg_flow_a [label="A", shape=plaintext, style=""]
+        leg_flow_b [label="B", shape=plaintext, style=""]
+        leg_cre_a  [label="A", shape=plaintext, style=""]
+        leg_cre_b  [label="B", shape=plaintext, style=""]
+        leg_val_a  [label="A", shape=plaintext, style=""]
+        leg_val_b  [label="B", shape=plaintext, style=""]
+        leg_wir_a  [label="A", shape=plaintext, style=""]
+        leg_wir_b  [label="B", shape=plaintext, style=""]
+
+        leg_own_a  -> leg_own_b  [label="owns / contains", style=solid,  arrowhead=normal, color="#1a1a1a"]
+        leg_ref_a  -> leg_ref_b  [label="borrows ref",     style=solid,  arrowhead=open,   color="#546e7a"]
+        leg_inh_a  -> leg_inh_b  [label="inherits from",  style=solid,  arrowhead=empty,  color="#4a148c"]
+        leg_flow_a -> leg_flow_b [label="data / message flow", style=bold, arrowhead=vee, color="#0277bd"]
+        leg_cre_a  -> leg_cre_b  [label="creates",         style=dashed, arrowhead=normal, color="#2e7d32"]
+        leg_val_a  -> leg_val_b  [label="validates",        style=dotted, arrowhead=vee,   color="#c62828"]
+        leg_wir_a  -> leg_wir_b  [label="matches / wires",  style=dashed, arrowhead=open,  color="#e65100"]
+    }
+
+    // =====================================================================
+    // EDGES — NAMING LAYER INTERNAL
+    // =====================================================================
+
+    identifier -> algorithm_name [
+        label    = "plugin_\nalgorithm_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    identifier -> product_specification [
+        label    = "suffix_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    identifier -> product_query [
+        label    = "creator\nlayer\nsuffix",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    algorithm_name -> product_specification [
+        label    = "qualifier_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+
+    // =====================================================================
+    // EDGES — STORAGE
+    // =====================================================================
+
+    product_T -> product_base [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    product_specification -> product_store [
+        label    = "key in\nproducts map",
+        style    = dashed, arrowhead = open, color = "#5c6bc0",
+    ]
+    product_T -> product_store [
+        label    = "stored via\nunique_ptr<product_base>",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    algorithm_name -> product_store [
+        label    = "source_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    data_cell_index -> product_store [
+        label    = "id_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    product_store -> handle_T [
+        label    = "get_handle<T>()\ncreates",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    data_cell_index -> handle_T [
+        label    = "id_ (borrowed)",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    product_T -> handle_T [
+        label    = "product_ (borrowed)",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+
+    // =====================================================================
+    // EDGES — QUERY
+    // =====================================================================
+
+    product_query -> product_specification [
+        label    = "match()\n→ bool",
+        style    = dashed, arrowhead = open, color = "#e65100",
+    ]
+    products_consumer -> product_query [
+        label    = "stores\ninput_products_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+
+    // =====================================================================
+    // EDGES — HIERARCHY LAYER INTERNAL
+    // =====================================================================
+
+    identifier -> data_cell_index [
+        label    = "layer_name_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    data_cell_index -> data_cell_index [
+        label    = "parent_\n(shared_ptr chain\nto job root)",
+        style    = dashed, arrowhead = open, color = "#2e7d32",
+    ]
+    fixed_hierarchy -> data_cell_index [
+        label    = "validate()\nlayer_hash()",
+        style    = dotted, arrowhead = vee, color = "#c62828", penwidth = 1.5,
+    ]
+    fixed_hierarchy -> data_cell_cursor [
+        label    = "yield_job()\ncreates",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    data_cell_cursor -> data_cell_index [
+        label    = "wraps index_\nyield_child() creates child",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    data_cell_cursor -> fixed_hierarchy [
+        label    = "borrows\nhierarchy_",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    data_cell_cursor -> async_driver [
+        label    = "borrows\ndriver_",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    layer_generator -> fixed_hierarchy [
+        label    = "hierarchy()\nbuilds",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    layer_generator -> driver_bundle [
+        label    = "driver_for_test()\nbuilds",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+
+    // =====================================================================
+    // EDGES — REGISTRATION / USER-FACING
+    // =====================================================================
+
+    macro_register_alg -> module_graph_proxy [
+        label    = "entry point\nreceives",
+        style    = dashed, arrowhead = open, color = "#c62828",
+    ]
+    macro_register_src -> source_graph_proxy [
+        label    = "entry point\nreceives",
+        style    = dashed, arrowhead = open, color = "#c62828",
+    ]
+    macro_register_drv -> driver_proxy [
+        label    = "entry point\nreceives",
+        style    = dashed, arrowhead = open, color = "#c62828",
+    ]
+    driver_proxy -> driver_bundle [
+        label    = "driver()\ncreates",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    driver_bundle -> fixed_hierarchy [
+        label    = "contains\nhierarchy",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    module_graph_proxy -> graph_proxy_T [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    source_graph_proxy -> graph_proxy_T [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    graph_proxy_T -> glue_T [
+        label    = "create_glue()\ncreates",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_transform [
+        label    = "transform()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_fold [
+        label    = "fold()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_unfold [
+        label    = "unfold()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_observer [
+        label    = "observe()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_predicate [
+        label    = "predicate()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    glue_T -> declared_provider [
+        label    = "provide()",
+        style    = dashed, arrowhead = normal, color = "#2e7d32",
+    ]
+    configuration -> module_graph_proxy [
+        label    = "passed to\nentry point",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    configuration -> source_graph_proxy [
+        label    = "passed to\nentry point",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    configuration -> driver_proxy [
+        label    = "passed to\nentry point",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+
+    // =====================================================================
+    // EDGES — ALGORITHM NODE INHERITANCE
+    // =====================================================================
+
+    declared_transform -> products_consumer [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    declared_fold -> products_consumer [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    declared_unfold -> products_consumer [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    declared_observer -> products_consumer [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+    declared_predicate -> products_consumer [
+        label    = "inherits",
+        style    = solid, arrowhead = empty, color = "#4a148c",
+    ]
+
+    // =====================================================================
+    // EDGES — EXECUTION INFRASTRUCTURE
+    // =====================================================================
+
+    framework_graph -> node_catalog [
+        label    = "owns\nnodes_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    framework_graph -> index_router [
+        label    = "owns\nindex_router_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    framework_graph -> fixed_hierarchy [
+        label    = "owns\nfixed_hierarchy_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    framework_graph -> data_layer_hierarchy [
+        label    = "owns\nhierarchy_",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    framework_graph -> hierarchy_node_ [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    framework_graph -> edge_maker [
+        label    = "calls at\nfinalize()",
+        style    = dashed, arrowhead = open, color = "#e65100",
+    ]
+    framework_graph -> driver_bundle [
+        label    = "consumes at\nconstruction",
+        style    = solid, arrowhead = open, color = "#546e7a",
+    ]
+    node_catalog -> declared_provider [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    node_catalog -> declared_transform [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    node_catalog -> declared_fold [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    node_catalog -> declared_unfold [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    node_catalog -> declared_observer [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    node_catalog -> declared_predicate [
+        label    = "owns",
+        style    = solid, arrowhead = normal, color = "#1a1a1a",
+    ]
+    edge_maker -> product_query [
+        label    = "resolves at\nfinalize()",
+        style    = dashed, arrowhead = open, color = "#e65100",
+    ]
+    hierarchy_node_ -> data_layer_hierarchy [
+        label    = "increment_count()\n(all layers incl. unfold children)",
+        style    = dashed, arrowhead = open, color = "#bf360c",
+    ]
+    flusher_t -> flush_message [
+        label    = "broadcasts",
+        style    = bold, arrowhead = vee, color = "#f57f17",
+    ]
+
+    // =====================================================================
+    // EDGES — DATA / INDEX FLOW  (bold blue)
+    // =====================================================================
+
+    // Driver → async_driver → index_router
+    async_driver -> index_router [
+        label    = "yields\ndata_cell_index_ptr",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+
+    // index_router → providers (via index_message)
+    index_router -> index_message [
+        label    = "wraps as",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    index_message -> declared_provider [
+        label    = "routed by\nlayer_hash",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+
+    // provider → message → algorithm nodes
+    declared_provider -> message [
+        label    = "emits\nproduct_store",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    message -> declared_transform [
+        label    = "flows to",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    message -> declared_fold [
+        label    = "flows to",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    message -> declared_observer [
+        label    = "flows to",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    message -> declared_unfold [
+        label    = "flows to",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    declared_transform -> message [
+        label    = "emits",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    declared_fold -> message [
+        label    = "emits\non flush",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+
+    // unfold dual output
+    declared_unfold -> message [
+        label    = "port 0\nchild stores",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    declared_unfold -> index_router [
+        label    = "port 1\nchild indices\n(bypasses fixed_hierarchy)",
+        style    = bold, arrowhead = vee, color = "#0277bd",
+    ]
+    declared_unfold -> hierarchy_node_ [
+        label    = "output_index_port\nfeeds hierarchy",
+        style    = dashed, arrowhead = open, color = "#546e7a",
+    ]
+
+    // flush path
+    flush_message -> declared_fold [
+        label    = "flush_port\ntriggers emission",
+        style    = bold, arrowhead = vee, color = "#f57f17",
+    ]
+
+    // src_ → hierarchy_node_
+    async_driver -> hierarchy_node_ [
+        label    = "src_ also feeds",
+        style    = dashed, arrowhead = open, color = "#546e7a",
+    ]
+
+    // message carries product_store
+    message -> product_store [
+        label    = "carries\n(const_ptr)",
+        style    = dashed, arrowhead = open, color = "#546e7a",
+    ]
+    flush_message -> data_cell_index [
+        label    = "carries index",
+        style    = dashed, arrowhead = open, color = "#546e7a",
+    ]
+    index_message -> data_cell_index [
+        label    = "carries index",
+        style    = dashed, arrowhead = open, color = "#546e7a",
+    ]
+
+}

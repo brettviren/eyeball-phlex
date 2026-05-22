@@ -1,0 +1,160 @@
+digraph phlex_example {
+    rankdir=TB
+    compound=true
+    nodesep=0.55
+    ranksep=0.65
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10]
+    edge [fontname="Helvetica", fontsize=9, color="#555555"]
+
+    // ════════════════════════════════════════════════════════════
+    // Data-cell instances, grouped by layer
+    // ════════════════════════════════════════════════════════════
+
+    subgraph cluster_job_layer {
+        label="Job layer"
+        style="filled,rounded"
+        fillcolor="#fff0b3"
+        color="#b8860b"
+        fontname="Helvetica-Bold"
+
+        job0 [label="job : 0", fillcolor="#ffd966"]
+    }
+
+    subgraph cluster_run_layer {
+        label="Run layer"
+        style="filled,rounded"
+        fillcolor="#dae8fc"
+        color="#6c8ebf"
+        fontname="Helvetica-Bold"
+
+        run1 [label="run : 1",      fillcolor="#aed4f5"]
+        run2 [label="run : 2  …",   fillcolor="#cce0f5", color="#aaaaaa",
+              style="rounded,filled", fontcolor="#aaaaaa"]
+    }
+
+    subgraph cluster_trig_layer {
+        label="Trigger layer"
+        style="filled,rounded"
+        fillcolor="#d5e8d4"
+        color="#5a9e5a"
+        fontname="Helvetica-Bold"
+
+        trig11 [label="trigger : 1\n(run:1)",    fillcolor="#b8ddb6"]
+        trig12 [label="trigger : 2  …\n(run:1)", fillcolor="#cce8cb", color="#aaaaaa",
+                style="rounded,filled", fontcolor="#aaaaaa"]
+    }
+
+    subgraph cluster_apa_layer {
+        label="APA layer"
+        style="filled,rounded"
+        fillcolor="#e8d5f5"
+        color="#9673a6"
+        fontname="Helvetica-Bold"
+
+        apa0 [label="apa : 0\n(trigger:1 / run:1)", fillcolor="#d4b5e8"]
+        apa1 [label="apa : 1\n(trigger:1 / run:1)", fillcolor="#d4b5e8"]
+    }
+
+    // Parent → child hierarchy edges
+    job0   -> run1   [label="child"]
+    job0   -> run2   [style=dashed, color="#aaaaaa", arrowhead=open]
+    run1   -> trig11 [label="child"]
+    run1   -> trig12 [style=dashed, color="#aaaaaa", arrowhead=open]
+    trig11 -> apa0   [label="child"]
+    trig11 -> apa1   [label="child"]
+
+    // ════════════════════════════════════════════════════════════
+    // Product stores (one cluster per data cell shown)
+    // ════════════════════════════════════════════════════════════
+
+    subgraph cluster_ps_job0 {
+        label="product store\njob : 0"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#999999"
+        fontsize=9
+
+        p_geom [label="suffix : \"Geometry\"\ntype   :  DetectorGeometry\ncreator: geometry_source",
+                fillcolor="white", shape=box, style="filled"]
+    }
+
+    subgraph cluster_ps_apa0 {
+        label="product store\napa:0 / trigger:1 / run:1"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#999999"
+        fontsize=9
+
+        p_wf0   [label="suffix : \"Waveforms\"\ntype   :  vector\<float\>\ncreator: calibrate",
+                 fillcolor="#ebf7eb", shape=box, style="filled"]
+        p_hits0 [label="suffix : \"GoodHits\"\ntype   :  vector\<Hit\>\ncreator: hit_finder",
+                 fillcolor="#fce8e8", shape=box, style="filled"]
+    }
+
+    subgraph cluster_ps_apa1 {
+        label="product store\napa:1 / trigger:1 / run:1"
+        style="filled,rounded"
+        fillcolor="#f5f5f5"
+        color="#999999"
+        fontsize=9
+
+        p_wf1   [label="suffix : \"Waveforms\"\ntype   :  vector\<float\>\ncreator: calibrate",
+                 fillcolor="#ebf7eb", shape=box, style="filled"]
+        p_hits1 [label="suffix : \"GoodHits\"\ntype   :  vector\<Hit\>\ncreator: hit_finder",
+                 fillcolor="#fce8e8", shape=box, style="filled"]
+    }
+
+    // Cell → product store  ("has" relationship, dotted)
+    job0 -> p_geom [label="has", style=dotted, color="#888888", arrowhead=open]
+    apa0 -> p_wf0  [label="has", style=dotted, color="#888888", arrowhead=open]
+    apa1 -> p_wf1  [label="has", style=dotted, color="#888888", arrowhead=open]
+
+    // ════════════════════════════════════════════════════════════
+    // One graph node: hit_finder
+    //   • requires drives which products are read from stores
+    //   • creates  drives which products are written to stores
+    // ════════════════════════════════════════════════════════════
+
+    subgraph cluster_hit_finder {
+        label="graph node : hit_finder  (transform)"
+        style="filled,rounded"
+        fillcolor="#f8cecc"
+        color="#b85450"
+        fontname="Helvetica-Bold"
+        fontsize=11
+
+        hf_req [label="requires\nsuffix  = \"Waveforms\"\nlayer   = \"APA\"\ncreator = \"calibrate\"",
+                fillcolor="#fce5cd", shape=ellipse, style="filled"]
+        hf_fn  [label="hit_finder::operator()\n(invoked once per APA cell\nwith handle\<vector\<float\>\>)",
+                fillcolor="#f4b8b5"]
+        hf_cre [label="creates\nsuffix = \"GoodHits\"\nlayer  = \"APA\"",
+                fillcolor="#fce5cd", shape=ellipse, style="filled"]
+
+        hf_req -> hf_fn  [label="handle\<vector\<float\>\>"]
+        hf_fn  -> hf_cre [label="vector\<Hit\>"]
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // Data flow: product stores ↔ graph node via suffix matching
+    // ════════════════════════════════════════════════════════════
+
+    // Waveforms → hit_finder input (one message per APA cell)
+    p_wf0 -> hf_req [label="  suffix=\"Waveforms\"  msg(apa:0)",
+                     color="#3d8b3d", style=bold, fontcolor="#3d8b3d"]
+    p_wf1 -> hf_req [label="  suffix=\"Waveforms\"  msg(apa:1)",
+                     color="#3d8b3d", style=bold, fontcolor="#3d8b3d"]
+
+    // hit_finder output → GoodHits placed into each APA cell's store
+    hf_cre -> p_hits0 [label="suffix=\"GoodHits\"  msg(apa:0)  ",
+                       color="#b85450", style=bold, fontcolor="#b85450"]
+    hf_cre -> p_hits1 [label="suffix=\"GoodHits\"  msg(apa:1)  ",
+                       color="#b85450", style=bold, fontcolor="#b85450"]
+
+    // ════════════════════════════════════════════════════════════
+    // Rank hints to keep product stores beside their owner cells
+    // and graph node beside the APA layer
+    // ════════════════════════════════════════════════════════════
+    { rank=same; job0;  p_geom  }
+    { rank=same; apa0;  apa1; p_wf0; p_hits0; p_wf1; p_hits1;
+                 hf_req; hf_fn; hf_cre }
+}

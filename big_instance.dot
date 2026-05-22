@@ -1,0 +1,249 @@
+digraph big_instance {
+    graph [
+        rankdir=TB,
+        splines=spline,
+        fontname="Helvetica",
+        fontsize=12,
+        label="Phlex Object-Level Instance Diagram — DLH · DFP · IFP",
+        labelloc=t,
+        compound=true,
+        nodesep=0.5,
+        ranksep=0.7
+    ]
+    node [fontname="Helvetica", fontsize=10]
+    edge [fontname="Helvetica", fontsize=9]
+
+    // ================================================================
+    // DLH: Data-Layer Hierarchy
+    // Nested layer clusters; HTML table cells expose named ports so
+    // cross-subgraph edges can target individual product rows.
+    // ================================================================
+    subgraph cluster_DLH {
+        label="DLH: Data-Layer Hierarchy"
+        style=filled
+        fillcolor="#f1f8e9"
+        color="#33691e"
+        fontcolor="#33691e"
+
+        subgraph cluster_job_layer {
+            label="job"
+            style=filled
+            fillcolor="#c8e6c9"
+            color="#388e3c"
+
+            job0 [
+                label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="#a5d6a7">
+                    <TR><TD PORT="h" BGCOLOR="#66bb6a"><B>job:0</B></TD></TR>
+                    <TR><TD PORT="cfg" ALIGN="LEFT">config [loader:cfg]</TD></TR>
+                </TABLE>>,
+                shape=plaintext
+            ]
+        }
+
+        subgraph cluster_run_layer {
+            label="run"
+            style=filled
+            fillcolor="#bbdefb"
+            color="#1565c0"
+
+            run0 [
+                label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="#90caf9">
+                    <TR><TD PORT="h" BGCOLOR="#42a5f5"><B>run:0</B></TD></TR>
+                    <TR><TD PORT="gn" ALIGN="LEFT">gains [calibdb:gn]</TD></TR>
+                </TABLE>>,
+                shape=plaintext
+            ]
+        }
+
+        subgraph cluster_event_layer {
+            label="event"
+            style=filled
+            fillcolor="#e8eaf6"
+            color="#3949ab"
+
+            ev0 [
+                label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="#c5cae9">
+                    <TR><TD PORT="h"   BGCOLOR="#7986cb"><B>event:0</B></TD></TR>
+                    <TR><TD PORT="raw" ALIGN="LEFT">raw_hits [provider_raw:raw]</TD></TR>
+                    <TR><TD PORT="cal" ALIGN="LEFT">cal_hits [calibrate:cal]</TD></TR>
+                </TABLE>>,
+                shape=plaintext
+            ]
+            ev1 [label="event:1", shape=box, style="filled,rounded", fillcolor="#c5cae9"]
+
+            subgraph { rank=same; ev0; ev1 }
+        }
+
+        subgraph cluster_apa_layer {
+            label="apa  (children of event:0 only)"
+            style=filled
+            fillcolor="#fff9c4"
+            color="#f57f17"
+
+            apa0 [
+                label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="#fff59d">
+                    <TR><TD PORT="h"   BGCOLOR="#ffee58"><B>apa:0</B></TD></TR>
+                    <TR><TD PORT="sig" ALIGN="LEFT">wire_sigs [deconv:sig]</TD></TR>
+                </TABLE>>,
+                shape=plaintext
+            ]
+            apa1 [label="apa:1", shape=box, style="filled,rounded", fillcolor="#fff59d"]
+            apa2 [label="apa:2", shape=box, style="filled,rounded", fillcolor="#fff59d"]
+            apa3 [label="apa:3", shape=box, style="filled,rounded", fillcolor="#fff59d"]
+
+            subgraph { rank=same; apa0; apa1; apa2; apa3 }
+        }
+
+        subgraph cluster_plane_layer {
+            label="plane  (children of apa:0 only)"
+            style=filled
+            fillcolor="#fce4ec"
+            color="#c62828"
+
+            plane0 [
+                label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" BGCOLOR="#f8bbd0">
+                    <TR><TD PORT="h"   BGCOLOR="#f48fb1"><B>plane:0</B></TD></TR>
+                    <TR><TD PORT="trk" ALIGN="LEFT">track_segs [tracker:trk]</TD></TR>
+                </TABLE>>,
+                shape=plaintext
+            ]
+            plane1 [label="plane:1", shape=box, style="filled,rounded", fillcolor="#f8bbd0"]
+            plane2 [label="plane:2", shape=box, style="filled,rounded", fillcolor="#f8bbd0"]
+
+            subgraph { rank=same; plane0; plane1; plane2 }
+        }
+    }
+
+    // ================================================================
+    // DFP: Data Flow Processing
+    // Declared algorithm nodes. Provider nodes supply products into
+    // data cells; transform/unfold/observer nodes process them.
+    // ================================================================
+    subgraph cluster_DFP {
+        label="DFP: Data Flow Processing"
+        style=filled
+        fillcolor="#f3e5f5"
+        color="#6a1b9a"
+        fontcolor="#6a1b9a"
+
+        dfp_loader    [label="loader\n[provide job config]",       shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        dfp_calibdb   [label="calibdb\n[provide run gains]",       shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        dfp_prov_raw  [label="provider_raw\n[provide event hits]", shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        dfp_calibrate [label="calibrate\n[transform]",             shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        dfp_uapa      [label="unfold_apa\n[event→apa]",            shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        dfp_deconv    [label="deconvolve\n[transform]",            shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        dfp_uplane    [label="unfold_plane\n[apa→plane]",          shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        dfp_tracker   [label="tracker\n[transform]",               shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        dfp_observer  [label="dump_results\n[observer]",           shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+    }
+
+    // ================================================================
+    // IFP: Index Flow Processing
+    // The TBB source node drives indices into index_router; unfold
+    // nodes inject child indices back into the same router.
+    // ================================================================
+    subgraph cluster_IFP {
+        label="IFP: Index Flow Processing"
+        style=filled
+        fillcolor="#fff8e1"
+        color="#e65100"
+        fontcolor="#e65100"
+
+        ifp_driver    [label="driver\n(TBB source node)",          shape=ellipse, style=filled, fillcolor="#ffcc80"]
+        ifp_hiern     [label="hierarchy_node\n(count cells)",      shape=ellipse, style=filled, fillcolor="#ffcc80"]
+        ifp_router    [label="index_router\n(dispatch by layer)",  shape=diamond, style=filled, fillcolor="#ffe082"]
+        ifp_job_port  [label="loader\ninput port",                 shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        ifp_run_port  [label="calibdb\ninput port",                shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        ifp_ev_port   [label="provider_raw\ninput port",           shape=box, style="filled,rounded", fillcolor="#b2dfdb"]
+        ifp_apa_port  [label="apa-algo\ninput port",               shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+        ifp_pln_port  [label="plane-algo\ninput port",             shape=box, style="filled,rounded", fillcolor="#dcedc8"]
+    }
+
+    // ================================================================
+    // Legend
+    // ================================================================
+    subgraph cluster_legend {
+        label="Legend"
+        style=filled
+        fillcolor="#fafafa"
+        color="#9e9e9e"
+
+        // Node type samples
+        leg_cell  [label="data cell\n(DLH)",          shape=box,     style="filled,rounded", fillcolor="#c8e6c9",  fontsize=9]
+        leg_prov  [label="provider node\n(DFP)",      shape=box,     style="filled,rounded", fillcolor="#b2dfdb",  fontsize=9]
+        leg_algo  [label="algorithm node\n(DFP)",     shape=box,     style="filled,rounded", fillcolor="#dcedc8",  fontsize=9]
+        leg_infra [label="TBB infrastructure\n(IFP)", shape=ellipse, style=filled,           fillcolor="#ffcc80",  fontsize=9]
+        leg_rout  [label="index router\n(IFP)",       shape=diamond, style=filled,           fillcolor="#ffe082",  fontsize=9]
+
+        // Edge sample endpoints (invisible point nodes)
+        leg_pA [shape=point, width=0.01, label=""]
+        leg_pB [shape=point, width=0.01, label=""]
+        leg_pC [shape=point, width=0.01, label=""]
+        leg_pD [shape=point, width=0.01, label=""]
+        leg_pE [shape=point, width=0.01, label=""]
+        leg_pF [shape=point, width=0.01, label=""]
+    }
+
+    // ================================================================
+    // EDGES — all defined outside subgraph cluster blocks
+    // ================================================================
+
+    // --- DLH parent→child hierarchy ---
+    job0:h  -> run0:h   [style=solid, color="#33691e", arrowhead=normal]
+    run0:h  -> ev0:h    [style=solid, color="#33691e", arrowhead=normal]
+    run0:h  -> ev1      [style=solid, color="#33691e", arrowhead=normal]
+    ev0:h   -> apa0:h   [style=solid, color="#33691e", arrowhead=normal]
+    ev0:h   -> apa1     [style=solid, color="#33691e", arrowhead=normal]
+    ev0:h   -> apa2     [style=solid, color="#33691e", arrowhead=normal]
+    ev0:h   -> apa3     [style=solid, color="#33691e", arrowhead=normal]
+    apa0:h  -> plane0:h [style=solid, color="#33691e", arrowhead=normal]
+    apa0:h  -> plane1   [style=solid, color="#33691e", arrowhead=normal]
+    apa0:h  -> plane2   [style=solid, color="#33691e", arrowhead=normal]
+
+    // --- DFP internal data-flow (constraint=false) ---
+    dfp_prov_raw  -> dfp_calibrate [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_calibrate -> dfp_uapa      [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_uapa      -> dfp_deconv    [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_deconv    -> dfp_uplane    [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_uplane    -> dfp_tracker   [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_tracker   -> dfp_observer  [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+
+    // --- IFP: driver and unfold inject indices into router (constraint=false) ---
+    ifp_driver -> ifp_hiern    [constraint=false, style=dashed, color=orange, arrowhead=open]
+    ifp_driver -> ifp_router   [constraint=false, style=dashed, color=orange, arrowhead=open]
+    dfp_uapa   -> ifp_router   [constraint=false, style=dashed, color=orange, arrowhead=open, label="new apa idx"]
+    dfp_uplane -> ifp_router   [constraint=false, style=dashed, color=orange, arrowhead=open, label="new plane idx"]
+
+    // --- IFP: router dispatches to provider/algo input ports (constraint=false) ---
+    ifp_router -> ifp_job_port  [constraint=false, style=dashed, color=orange, arrowhead=open, label="job"]
+    ifp_router -> ifp_run_port  [constraint=false, style=dashed, color=orange, arrowhead=open, label="run"]
+    ifp_router -> ifp_ev_port   [constraint=false, style=dashed, color=orange, arrowhead=open, label="event"]
+    ifp_router -> ifp_apa_port  [constraint=false, style=dashed, color=orange, arrowhead=open, label="apa"]
+    ifp_router -> ifp_pln_port  [constraint=false, style=dashed, color=orange, arrowhead=open, label="plane"]
+
+    // --- IFP → DFP: input ports trigger algorithm execution (constraint=false) ---
+    ifp_job_port -> dfp_loader    [constraint=false, style=dashed, color=orange, arrowhead=open]
+    ifp_run_port -> dfp_calibdb   [constraint=false, style=dashed, color=orange, arrowhead=open]
+    ifp_ev_port  -> dfp_prov_raw  [constraint=false, style=dashed, color=orange, arrowhead=open]
+    ifp_apa_port -> dfp_deconv    [constraint=false, style=dashed, color=orange, arrowhead=open]
+    ifp_pln_port -> dfp_tracker   [constraint=false, style=dashed, color=orange, arrowhead=open]
+
+    // --- DFP → DLH: algorithms write products into data-cell stores (constraint=false) ---
+    dfp_loader    -> job0:cfg   [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_calibdb   -> run0:gn    [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_prov_raw  -> ev0:raw    [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_calibrate -> ev0:cal    [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_deconv    -> apa0:sig   [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+    dfp_tracker   -> plane0:trk [constraint=false, style=bold, color="#1565c0", arrowhead=vee]
+
+    // --- DLH → DFP: algorithms read upstream products (constraint=false) ---
+    ev0:raw   -> dfp_calibrate [constraint=false, style=solid, color="#64b5f6", arrowhead=vee]
+    ev0:cal   -> dfp_uapa      [constraint=false, style=solid, color="#64b5f6", arrowhead=vee]
+    apa0:sig  -> dfp_uplane    [constraint=false, style=solid, color="#64b5f6", arrowhead=vee]
+    plane0:trk -> dfp_observer [constraint=false, style=solid, color="#64b5f6", arrowhead=vee]
+
+    // --- Legend edge samples ---
+    leg_pA -> leg_pB [style=solid,  color="#33691e", arrowhead=normal, label="parent→child (DLH hierarchy)",   fontsize=9, constraint=false]
+    leg_pC -> leg_pD [style=bold,   color="#1565c0", arrowhead=vee,    label="data flow write (DFP→DLH cell)", fontsize=9, constraint=false]
+    leg_pE -> leg_pF [style=dashed, color=orange,    arrowhead=open,   label="index route (IFP)",              fontsize=9, constraint=false]
+}
